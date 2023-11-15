@@ -95,13 +95,24 @@ impl Device for SmartThermometer {
     }
 }
 
-struct OwningDeviceInfoProvider {
+struct OwningDeviceInfoProvider<'a> {
     socket: SmartSocket,
+    house: &'a SmartHouse,
 }
 
-impl DeviceInfoProvider for OwningDeviceInfoProvider {
+impl<'a> OwningDeviceInfoProvider<'a> {
+    fn get_room_device(&self, room_name: &str, device_name: &str) -> bool {
+        // Получаем список устройств в комнате
+        let devices = self.house.devices(room_name);
+
+        // Проверяем, есть ли среди устройств искомое устройство
+        devices.iter().any(|d| d == device_name)
+    }
+}
+
+impl<'a> DeviceInfoProvider for OwningDeviceInfoProvider<'a> {
     fn get_device_info(&self, room_name: &str, device_name: &str) -> Result<String, String> {
-        if self.socket.name == device_name {
+        if self.get_room_device(room_name, device_name) {
             Ok(format!(
                 "The device '{}' in the room '{}' is {} with a power consumption of {} watts.",
                 self.socket.name,
@@ -116,14 +127,25 @@ impl DeviceInfoProvider for OwningDeviceInfoProvider {
     }
 }
 
-struct BorrowingDeviceInfoProvider<'a, 'b> {
+struct BorrowingDeviceInfoProvider<'a, 'b, 'c> {
     socket: &'a SmartSocket,
     thermo: &'b SmartThermometer,
+    house: &'c SmartHouse,
 }
 
-impl<'a, 'b> DeviceInfoProvider for BorrowingDeviceInfoProvider<'a, 'b> {
+impl<'a, 'b, 'c> BorrowingDeviceInfoProvider<'a, 'b, 'c> {
+    fn get_room_device(&self, room_name: &str, device_name: &str) -> bool {
+        // Получаем список устройств в комнате
+        let devices = self.house.devices(room_name);
+
+        // Проверяем, есть ли среди устройств искомое устройство
+        devices.iter().any(|d| d == device_name)
+    }
+}
+
+impl<'a, 'b, 'c> DeviceInfoProvider for BorrowingDeviceInfoProvider<'a, 'b, 'c> {
     fn get_device_info(&self, _room_name: &str, device_name: &str) -> Result<String, String> {
-        if self.socket.name == device_name {
+        if self.get_room_device(_room_name, device_name) {
             Ok(format!(
                 "Socket '{}' is currently {} with a power consumption of {} watts.",
                 self.socket.name,
@@ -173,17 +195,21 @@ fn main() {
         devices: bedroom_devices,
     };
 
-    let house = SmartHouse::new(vec![living_room, bedroom]);
+    let house_g = SmartHouse::new(vec![living_room, bedroom]);
 
-    let info_provider_1 = OwningDeviceInfoProvider { socket: socket1 };
+    let info_provider_1 = OwningDeviceInfoProvider {
+        socket: socket1,
+        house: &house_g,
+    };
 
-    let report1 = house.create_report(&info_provider_1);
+    let report1 = house_g.create_report(&info_provider_1);
 
     let info_provider_2 = BorrowingDeviceInfoProvider {
         socket: &socket2,
         thermo: &thermo,
+        house: &house_g,
     };
-    let report2 = house.create_report(&info_provider_2);
+    let report2 = house_g.create_report(&info_provider_2);
 
     // Выводим отчёты на экран:
     println!("Report #1: {report1}");
